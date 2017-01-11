@@ -1,4 +1,5 @@
 #include <iostream>
+#include <queue>
 using namespace std;
 #include "ps.h"
 
@@ -30,69 +31,142 @@ double quality(int heightl, int widthl, unsigned char *imgl, int il, int jl,
     return q;
 }
 
+void createRanking(vector<KEYPOINT> pointsl, int numberOfPointsLeft,
+                   vector<KEYPOINT> pointsr, int numberOfPointsRight,
+                   vector<vector<MARRIAGE_PRIORITY_ENTRY>> *leftSidePriorities,
+                   int heightl, int widthl, unsigned char *imgl,
+                   int heightr, int widthr, unsigned char *imgr,
+                   int wsize) {
+    // create the list of right points for each left point by priority
+    for ( int i = 0; i < numberOfPointsLeft; i++ ) {
+        KEYPOINT leftPoint = pointsl[i];
+        for ( int j = 0; j < numberOfPointsRight; j++ ) {
+            KEYPOINT rightPoint = pointsr[j];
+            double q = quality( heightl, widthl, imgl, leftPoint.x, leftPoint.y, heightr, widthr, imgr, rightPoint.x, rightPoint.y, wsize );
+            MARRIAGE_PRIORITY_ENTRY rightPointEntry;
+            rightPointEntry.value = q;
+            rightPointEntry.index = j;
+            // store the keypoint of the right together with the quality
+            // the corresponding keypoint of the left is implicitly known by the index
+            // we check where to insert the right keypoint according to its quality with the left keypoint
+            // this way we obtain a prioritized list
+            bool added = false;
+            vector<MARRIAGE_PRIORITY_ENTRY> *priorities = &((*leftSidePriorities)[i]);
+            for ( vector<MARRIAGE_PRIORITY_ENTRY>::iterator it = priorities->begin(); it != priorities->end(); it++ ) {
+                MARRIAGE_PRIORITY_ENTRY current = *it;
+                if ( rightPointEntry.value < current.value ) {
+                    added = true;
+                    priorities->insert( it, rightPointEntry );
+                    break;
+                }
+            }
+            if ( !added )
+                priorities->push_back( rightPointEntry );
+        }
+    }
+}
+
+void marry(vector<KEYPOINT> pointsl, int numberOfPointsLeft, vector<vector<MARRIAGE_PRIORITY_ENTRY>> *leftSidePriorities,
+           vector<KEYPOINT> pointsr, int numberOfPointsRight, vector<MARRIAGE_PRIORITY_ENTRY> *rightSideMatches) {
+
+    vector<bool> rightSideMatched( numberOfPointsRight );
+    fill( rightSideMatched.begin(), rightSideMatched.end(), false );
+    vector<MARRIAGE_PRIORITY_ENTRY> _rightSideMatches = *rightSideMatches;
+
+    // stores whether a keypoint of the left (i.e. the "men") has already been matched a partner
+    vector<bool> leftSideMatched( numberOfPointsLeft );
+    fill( leftSideMatched.begin(), leftSideMatched.end(), false );
+
+    int stillToMarry = pointsl.size();
+
+    while ( stillToMarry > 0 ) {
+
+        int toMarryIndex;
+        // find the first unengaged man
+        for ( toMarryIndex = 0; toMarryIndex < numberOfPointsLeft; toMarryIndex++ ) {
+            if ( !leftSideMatched[toMarryIndex] )
+                break;
+        }
+
+        // loop through the prioritized possible right side matches for the current left side keypoint
+        vector<vector<MARRIAGE_PRIORITY_ENTRY>> _leftSidePriorities = *leftSidePriorities;
+        vector<MARRIAGE_PRIORITY_ENTRY> priorities = _leftSidePriorities[toMarryIndex];
+        for ( vector<MARRIAGE_PRIORITY_ENTRY>::iterator it = priorities.begin();
+              it != priorities.end() && !leftSideMatched[toMarryIndex]; it++ ) {
+            // the prioritized left side keypoint of the current right side keypoint
+            MARRIAGE_PRIORITY_ENTRY entry = *it;
+            if ( !rightSideMatched[entry.index] ) {
+                // the desired keypoint has not been matched yet, we are free to engage it
+                rightSideMatched[entry.index] = true;
+                leftSideMatched[toMarryIndex] = true;
+                MARRIAGE_PRIORITY_ENTRY rightSideEntry;
+                rightSideEntry.index = toMarryIndex;
+                rightSideEntry.value = entry.value;
+                _rightSideMatches[entry.index] = rightSideEntry;
+                stillToMarry--;
+            } else {
+                // the desired left side keypoint is already engaged -> compare the values
+
+                // the current engagement of the desired left side keypoint
+                MARRIAGE_PRIORITY_ENTRY currentAssignment = _rightSideMatches[entry.index];
+                if ( entry.value < currentAssignment.value ) {
+                    // the left side keypoint prefers the right side keypoint that we check for over its current engagement
+                    leftSideMatched[toMarryIndex] = true;
+                    leftSideMatched[currentAssignment.index] = false;
+                    _rightSideMatches[entry.index].index = toMarryIndex;
+                    _rightSideMatches[entry.index].value = entry.value;
+                }
+            }
+        }
+    }
+}
+
 vector<MATCH> matching(int heightl, int widthl, unsigned char *imgl,
                        int heightr, int widthr, unsigned char *imgr,
                        vector<KEYPOINT> pointsl, vector<KEYPOINT> pointsr, int wsize) {
-    int nl=pointsl.size();
-    int nr=pointsr.size();
-    double *ql=new double[nl];
-    double *qr=new double[nr];
-    int *pl=new int[nl];
-    int *pr=new int[nr];
+    int numberOfPointsLeft = pointsl.size();
+    int numberOfPointsRight = pointsr.size();
 
-    for( int i=0; i<nl; i++ ) {
-        ql[i]=numeric_limits<double>::max();
-        pl[i]=-1;
-    }
-    for( int i=0; i<nr; i++ ) {
-        qr[i]=numeric_limits<double>::max();
-        pr[i]=-1;
+    bool needToSwap = numberOfPointsLeft > numberOfPointsRight;
+
+    // swap, because we marry the left side to the right side
+    if (needToSwap) {
+        swap(heightl, heightr);
+        swap(widthl, widthr);
+        swap(imgl, imgr);
+        swap(pointsl, pointsr);
     }
 
-    for( int il=0; il<nl; il++ ) {
-        for( int ir=0; ir<nr; ir++ ) {
-            int yl=(int)(pointsl[il].y+0.5);
-            int xl=(int)(pointsl[il].x+0.5);
-            int yr=(int)(pointsr[ir].y+0.5);
-            int xr=(int)(pointsr[ir].x+0.5);
-            double q=quality(heightl,widthl,imgl,yl,xl,heightr,widthr,imgr,yr,xr,wsize);
-            if( q<ql[il] ) {
-                ql[il]=q;
-                pl[il]=ir;
-            }
-            if( q<qr[ir] ) {
-                qr[ir]=q;
-                pr[ir]=il;
-            }
-        }
-    }
+    // stores the computed qualities for each keypoint of the left, i.e. contains a vector with the quality computed
+    // with each keypoint of the right
+    vector<vector<MARRIAGE_PRIORITY_ENTRY>> leftSidePriorities( numberOfPointsLeft );
 
-    // cross-check
-    for( int il=0; il<nl; il++ ) {
-        if( pl[il]!=-1 ) {
-            if( pr[pl[il]]!=il ) pl[il]=-1;
-        }
-    }
-    for( int ir=0; ir<nr; ir++ ) {
-        if( pr[ir]!=-1 ) {
-            if( pl[pr[ir]]!=ir ) pr[ir]=-1;
-        }
-    }
+    createRanking(pointsl, numberOfPointsLeft, pointsr, numberOfPointsRight,
+                  &leftSidePriorities, heightl, widthl, imgl, heightr, widthr, imgr, wsize);
+
+    // stores for each keypoint of the right (i.e. the "women") its matched partner from the left (i.e. the "men")
+    // to get the partner of "woman" 4, use 4 as index
+    vector<MARRIAGE_PRIORITY_ENTRY> rightSideMatches( numberOfPointsRight );
+
+    marry(pointsl, numberOfPointsLeft, &leftSidePriorities,
+          pointsr, numberOfPointsRight, &rightSideMatches);
 
     // fill
-    vector<MATCH> ret;
-    ret.clear();
-    for( int il=0; il<nl; il++ ) {
-        if( pl[il]!=-1 ) {
-            MATCH pair;
-            pair.xl=pointsl[il].x;
-            pair.yl=pointsl[il].y;
-            pair.xr=pointsr[pl[il]].x;
-            pair.yr=pointsr[pl[il]].y;
-            pair.value=ql[il];
-            ret.push_back(pair);
-        }
+    vector<MATCH> result;
+    for( int i = 0; i < rightSideMatches.size(); i++ ) {
+        KEYPOINT right = pointsr[i];
+        int left_index = rightSideMatches[i].index;
+        KEYPOINT left = pointsl[left_index];
+        MATCH toAdd;
+        toAdd.value = rightSideMatches[i].value;
+        KEYPOINT _right = needToSwap ? left : right;
+        KEYPOINT _left = needToSwap ? right : left;
+        toAdd.xl = _left.x;
+        toAdd.yl = _left.y;
+        toAdd.xr = _right.x;
+        toAdd.yr = _right.y;
+        result.push_back(toAdd);
     }
 
-    return ret;
+    return result;
 }

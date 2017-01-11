@@ -25,6 +25,11 @@ typedef struct {
     double value;
 } MATCH;
 
+typedef struct {
+    int index;
+    double value;
+} MARRIAGE_PRIORITY_ENTRY;
+
 vector<KEYPOINT> harris(int height, int width, unsigned char *img,
                         int wsize_sum, int wsize_loc, const char *name);
 vector<MATCH> matching(int heightl, int widthl, unsigned char *imgl,
