@@ -19,4 +19,8 @@ public:
 */
   double likelihood(cv::Mat img, Particle p);
 
+  cv::Mat hist;
+
+  double lambda;
+
 };

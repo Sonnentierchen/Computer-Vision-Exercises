@@ -8,7 +8,6 @@
 #include "MotionModel.h"
 #include "ObservationModel.h"
 
-
 /**
 * \brief  Resample particles using their weights
 * \param      particles vector of particles for resampling
@@ -18,8 +17,26 @@
 */
 std::vector<Particle> resampleParticles(std::vector<Particle>& particles, int numberOfParticles, std::mt19937 engine)
 {
-    // IMPLEMENT
-    return particles;
+    std::uniform_real_distribution<double> dist(0,1);
+    std::vector<Particle> result;
+    double totalWeight = 0;
+    for (Particle particle : particles) {
+        totalWeight += particle.weight;
+    }
+    for (int i = 0; i < numberOfParticles; i++) {
+        double random = dist(engine);
+        double gain = totalWeight * random;
+        double step = 0;
+        for (Particle particle : particles) {
+            if (gain <= step + particle.weight) {
+                Particle newParticle(particle.x, particle.y, particle.size);
+                result.push_back(newParticle);
+                break;
+            }
+            step += particle.weight;
+        }
+    }
+    return result;
 }
 
 /**
@@ -33,20 +50,33 @@ std::vector<Particle> resampleParticles(std::vector<Particle>& particles, int nu
 */
 void processFrame(cv::Mat& frame, cv::Mat& frameLab, std::vector<Particle>& particles, MotionModel& mm, ObservationModel* om, std::mt19937& engine )
 {
+
+    int n = 10;
     
     // check if we have an observation model
     if(om!=NULL)	//we do tracking in this case
     {
                 
 	//calculate weights (the observation likelihood) for particles using the observation model
-	//IMPLEMENT
+        for(Particle &particle : particles) {
+            particle.weight = om->likelihood(frameLab, particle);
+        }
 
         Particle meanP(0,0,0);
-	//calculate mean particle using the weights
-	//IMPLEMENT
+        meanP.size = 0;
+    //calculate mean particle using the weights
+        for (Particle particle : particles) {
+            meanP.x += particle.x * (1 - particle.weight);
+            meanP.y += particle.y * (1 - particle.weight);
+            meanP.size += particle.size * (1 - particle.weight);
+        }
+
+        meanP.x = meanP.x / (double) particles.size();
+        meanP.y = meanP.y / (double) particles.size();
+        meanP.size = meanP.size / (double) particles.size();
         
 	//resample the particles using their weights
-        particles= resampleParticles(particles, particles.size(), engine);
+        particles = resampleParticles(particles, particles.size(), engine);
  
         // cutout boundingbox
         cv::Mat cutout(200,200,CV_8UC3);
@@ -54,13 +84,18 @@ void processFrame(cv::Mat& frame, cv::Mat& frameLab, std::vector<Particle>& part
         cv::imshow("subimage", cutout);
        
 	// draw bounding box for every n-th particle in red into the RGB-frame
-	// IMPLEMENT
+        int stepSize = particles.size() / n;
+        for(uint i = 0; i < particles.size(); i += stepSize) {
+            //particles[i].draw(frame, cv::Scalar(50, 200, 255));
+        }
 	  
 	// draw boundingbox of mean particle in blue into the RGB-frame
-        // IMPLEMENT
+        meanP.draw(frame, cv::Scalar(255, 80, 80));
 	
 	//move the particles according to the motion model
-        //IMPLEMENT
+        for(uint i = 0; i < particles.size(); i ++) {
+            particles[i] = mm.move(particles[i], engine);
+        }
     }
     // in case we don't have an observation model and are not tracking we draw the bounding box in the center
     // it will be used to learn the observation model
@@ -123,8 +158,8 @@ void trackSequence(std::string seq)
         cv::cvtColor(frame, frameLab, CV_BGR2Lab);
 	
 	
-	processFrame(frame,frameLab,particles,mm,om,engine);
-	cv::waitKey(om==NULL? 0:1);
+        processFrame(frame,frameLab,particles,mm,om,engine);
+        cv::waitKey(om==NULL? 0:1);
 	
         // if there is no observation model -> learn one and start tracking
         if(om==NULL)

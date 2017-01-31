@@ -1,4 +1,5 @@
 #include "ObservationModel.h"
+#include <math.h>
 
   void calculateHist(cv::Mat& img, cv::Mat& hist){
     int histSize[3];
@@ -24,24 +25,22 @@
 	3, // it is a 3D histogram
 	histSize, // number of bins
 	ranges // pixel value range
-	);
+    );
   }
 
-
-  ObservationModel::ObservationModel(cv::Mat img, double lambda_){	
-    // IMPLEMENT
-    // claculate the histogram of the given image (use calcHist function above)
-    // normalize the histogram
-    // store the histogram and lambda
+  ObservationModel::ObservationModel(cv::Mat img, double lambda_){
+      calculateHist(img, this->hist);
+      cv::normalize(this->hist, this->hist, 1, 0, cv::NORM_L1);
+      this->lambda = lambda_;
   }
   
   double ObservationModel::likelihood(cv::Mat img, Particle p){
-	// IMPLEMENT
-        // caluclate a histogramm for the window defined by the particle
-	// normalize it
-	// compare it to the stored histogram using the cv::compareHist function (use the Bahttacharyya distance) 
-	// return the likelihood exp(-lambda * histogram_distance)
+      cv::Mat currentFrame = p.getSubImg(img);
+      cv::Mat currentHist;
+      calculateHist(currentFrame, currentHist);
+
+      double distance = cv::compareHist(currentHist, this->hist, CV_COMP_BHATTACHARYYA);
     	
-	return  1;
+      return  exp(- this->lambda * distance);
   }
 
